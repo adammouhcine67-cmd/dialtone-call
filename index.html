@@ -205,6 +205,7 @@
   <input id="nameInput" class="mono" placeholder="your name" maxlength="20" autocomplete="off">
   <button id="connectBtn">CONNECT</button>
   <div class="err" id="landingErr"></div>
+  <div class="err mono" id="debugStatus" style="color:#7C8794; font-size:11px;"></div>
 </div>
 
 <!-- APP -->
@@ -238,6 +239,7 @@
     <div class="sb-section" id="directorySection">
       <div class="sb-title">Directory</div>
       <div id="directory"><div id="directoryEmpty">no one else is online yet</div></div>
+      <div id="liveStatus" class="mono" style="padding:8px 16px; font-size:10px; color:#7C8794; border-top:1px solid var(--line);"></div>
     </div>
     <div class="sb-section" id="chatSection">
       <div class="sb-title">Line Chat</div>
@@ -399,17 +401,34 @@ async function setupPersonalChannel(){
       endCallCleanup("declined");
     }
   });
-  await personalChannel.subscribe();
+  await new Promise((resolve, reject) => {
+    personalChannel.subscribe((status, err) => {
+      console.log("personal channel status:", status, err);
+      if(status === "SUBSCRIBED") resolve();
+      if(status === "CHANNEL_ERROR" || status === "TIMED_OUT"){
+        reject(new Error(`personal channel: ${status}` + (err ? ` — ${err.message || JSON.stringify(err)}` : "")));
+      }
+    });
+  });
 }
 
 // ---------- Lobby (presence / directory) ----------
 async function setupLobby(){
   lobbyChannel = sb.channel("lobby", { config: { presence: { key: myName } } });
   lobbyChannel.on("presence", { event: "sync" }, renderDirectory);
-  await lobbyChannel.subscribe(async (status) => {
-    if(status === "SUBSCRIBED"){
-      await lobbyChannel.track({ username: myName, status: "online" });
-    }
+  await new Promise((resolve, reject) => {
+    lobbyChannel.subscribe(async (status, err) => {
+      console.log("lobby channel status:", status, err);
+      const liveStatus = document.getElementById("liveStatus");
+      if(liveStatus) liveStatus.textContent = `lobby: ${status}`;
+      if(status === "SUBSCRIBED"){
+        await lobbyChannel.track({ username: myName, status: "online" });
+        resolve();
+      }
+      if(status === "CHANNEL_ERROR" || status === "TIMED_OUT"){
+        reject(new Error(`lobby channel: ${status}` + (err ? ` — ${err.message || JSON.stringify(err)}` : "")));
+      }
+    });
   });
 }
 
