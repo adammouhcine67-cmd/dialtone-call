@@ -72,10 +72,11 @@
   header .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); }
 
   /* ---------- Stage ---------- */
-  #stage{ position:relative; background:#000; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-  #remoteVideo{ width:100%; height:100%; object-fit:cover; background:#000; }
+  #stage{ position:relative; background:#000; overflow:hidden; }
+  #remoteVideo{ width:100%; height:100%; object-fit:cover; background:#000; display:block; }
   #stage.empty::before{
-    content:"NO SIGNAL"; font-family:'JetBrains Mono',monospace; color:#2A3038; font-size:14px; letter-spacing:0.15em;
+    content:"NO SIGNAL"; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-family:'JetBrains Mono',monospace; color:#2A3038; font-size:14px; letter-spacing:0.15em; pointer-events:none;
   }
   #localWrap{
     position:absolute; bottom:20px; right:20px; width:180px; height:120px; border-radius:8px; overflow:hidden;
