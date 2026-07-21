@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIALTONE — Video Call</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#0B0E11;
+    --panel:#12161C;
+    --panel-alt:#171C23;
+    --line: rgba(255,255,255,0.08);
+    --text:#E8ECF1;
+    --muted:#7C8794;
+    --green:#37D67A;
+    --amber:#FFB020;
+    --red:#FF5C5C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow:hidden;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  .display{font-family:'Space Grotesk',sans-serif;}
+
+  /* ---------- Landing ---------- */
+  #landing{
+    height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:22px;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(55,214,122,0.06), transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(255,176,32,0.05), transparent 40%),
+      var(--bg);
+  }
+  #landing .mark{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:42px; letter-spacing:-0.02em; }
+  #landing .mark span{ color:var(--green); }
+  #landing .sub{ color:var(--muted); font-size:14px; letter-spacing:0.04em; text-transform:uppercase; }
+  #landing input{
+    width:280px; padding:14px 16px; border-radius:6px; border:1px solid var(--line);
+    background:var(--panel); color:var(--text); font-family:'JetBrains Mono',monospace; font-size:15px; outline:none;
+  }
+  #landing input:focus{ border-color:var(--green); }
+  #landing button{
+    width:280px; padding:14px; border-radius:6px; border:none; background:var(--green); color:#06170D;
+    font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:15px; cursor:pointer; letter-spacing:0.02em;
+  }
+  #landing button:disabled{ background:#2A3D33; color:var(--muted); cursor:not-allowed; }
+  #landing .err{ color:var(--red); font-size:13px; height:16px; }
+
+  /* ---------- App shell ---------- */
+  #app{ display:none; height:100%; grid-template-columns: 1fr 320px; grid-template-rows: 56px 1fr; }
+  #app.active{ display:grid; }
+  header{
+    grid-column:1/3; display:flex; align-items:center; justify-content:space-between;
+    padding:0 20px; border-bottom:1px solid var(--line); background:var(--panel);
+  }
+  header .brand{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; letter-spacing:-0.01em; }
+  header .brand span{ color:var(--green); }
+  header .me{ display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; }
+  header .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 8px var(--green); }
+
+  /* ---------- Stage ---------- */
+  #stage{ position:relative; background:#000; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+  #remoteVideo{ width:100%; height:100%; object-fit:cover; background:#000; }
+  #stage.empty::before{
+    content:"NO SIGNAL"; font-family:'JetBrains Mono',monospace; color:#2A3038; font-size:14px; letter-spacing:0.15em;
+  }
+  #localWrap{
+    position:absolute; bottom:20px; right:20px; width:180px; height:120px; border-radius:8px; overflow:hidden;
+    border:1px solid var(--line); background:#000; box-shadow:0 4px 20px rgba(0,0,0,0.5);
+  }
+  #localVideo{ width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  #callBar{
+    position:absolute; bottom:20px; left:0; right:0; display:flex; justify-content:center; gap:12px; z-index:5;
+  }
+  #callBar button{
+    width:48px; height:48px; border-radius:50%; border:1px solid var(--line); background:rgba(23,28,35,0.9);
+    color:var(--text); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  #callBar button.active{ background:var(--red); border-color:var(--red); color:#fff; }
+  #callBar button.hangup{ background:var(--red); border-color:var(--red); }
+  #callInfo{
+    position:absolute; top:16px; left:16px; display:none; align-items:center; gap:10px;
+    background:rgba(18,22,28,0.85); border:1px solid var(--line); border-radius:6px; padding:8px 12px;
+  }
+  #callInfo.show{ display:flex; }
+  #callInfo .led{ color:var(--red); font-family:'JetBrains Mono',monospace; font-size:14px; letter-spacing:0.05em; }
+  #callInfo .peer{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px; }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar{ background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  .sb-section{ display:flex; flex-direction:column; min-height:0; }
+  .sb-title{
+    padding:14px 16px 8px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:12px;
+    letter-spacing:0.12em; color:var(--muted); text-transform:uppercase; border-bottom:1px solid var(--line);
+  }
+  #directory{ flex:1 1 40%; overflow-y:auto; }
+  .line-item{
+    display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--line);
+  }
+  .line-item .who{ display:flex; align-items:center; gap:10px; }
+  .line-item .pulse{ width:9px; height:9px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); animation:pulse 2s infinite; }
+  .line-item .pulse.busy{ background:var(--amber); box-shadow:0 0 6px var(--amber); }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.35;} }
+  .line-item .name{ font-family:'JetBrains Mono',monospace; font-size:13px; }
+  .line-item button{
+    padding:6px 12px; border-radius:5px; border:1px solid var(--green); background:transparent; color:var(--green);
+    font-family:'Space Grotesk',sans-serif; font-size:12px; font-weight:700; cursor:pointer; letter-spacing:0.02em;
+  }
+  .line-item button:disabled{ border-color:var(--line); color:var(--muted); cursor:not-allowed; }
+  #directoryEmpty{ padding:20px 16px; color:var(--muted); font-size:13px; }
+
+  #chatSection{ flex:1 1 60%; display:flex; flex-direction:column; min-height:0; }
+  #chatLog{ flex:1; overflow-y:auto; padding:10px 16px; display:flex; flex-direction:column; gap:8px; }
+  .msg{ font-size:13px; line-height:1.4; }
+  .msg .from{ font-family:'JetBrains Mono',monospace; color:var(--green); font-size:11px; margin-right:6px; }
+  .msg.own .from{ color:var(--amber); }
+  .msg .body{ color:var(--text); }
+  .msg .sys{ color:var(--muted); font-style:italic; }
+  #chatInputWrap{ display:flex; border-top:1px solid var(--line); }
+  #chatInput{
+    flex:1; padding:12px 14px; background:transparent; border:none; color:var(--text); font-family:'Inter',sans-serif;
+    font-size:13px; outline:none;
+  }
+  #chatInput:disabled{ color:var(--muted); }
+  #chatSend{ background:transparent; border:none; color:var(--green); padding:0 16px; cursor:pointer; font-weight:700; font-family:'Space Grotesk',sans-serif; }
+  #chatSend:disabled{ color:var(--muted); cursor:not-allowed; }
+
+  /* ---------- Modals ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index:50;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal{
+    background:var(--panel-alt); border:1px solid var(--line); border-radius:10px; padding:28px; width:320px; text-align:center;
+  }
+  .modal .ring-dot{
+    width:14px; height:14px; border-radius:50%; background:var(--amber); margin:0 auto 14px; box-shadow:0 0 0 0 rgba(255,176,32,0.6);
+    animation:ring 1.2s infinite;
+  }
+  @keyframes ring{ 0%{ box-shadow:0 0 0 0 rgba(255,176,32,0.5);} 70%{ box-shadow:0 0 0 14px rgba(255,176,32,0);} 100%{ box-shadow:0 0 0 0 rgba(255,176,32,0);} }
+  .modal .who{ font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:18px; margin-bottom:4px; }
+  .modal .label{ color:var(--muted); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:18px; }
+  .modal .actions{ display:flex; gap:10px; justify-content:center; }
+  .modal .actions button{
+    flex:1; padding:10px; border-radius:6px; border:none; font-family:'Space Grotesk',sans-serif; font-weight:700; cursor:pointer;
+  }
+  .modal .accept{ background:var(--green); color:#06170D; }
+  .modal .decline, .modal .cancel{ background:var(--red); color:#1A0000; }
+  .modal .cancel{ background:transparent; border:1px solid var(--line); color:var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- LANDING -->
+<div id="landing">
+  <div class="mark">DIAL<span>TONE</span></div>
+  <div class="sub">pick a name, see who's on the line</div>
+  <input id="nameInput" class="mono" placeholder="your name" maxlength="20" autocomplete="off">
+  <button id="connectBtn">CONNECT</button>
+  <div class="err" id="landingErr"></div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <header>
+    <div class="brand">DIAL<span>TONE</span></div>
+    <div class="me"><span class="dot"></span><span class="mono" id="meLabel"></span></div>
+  </header>
+
+  <div id="stage" class="empty">
+    <video id="remoteVideo" autoplay playsinline></video>
+    <div id="callInfo">
+      <span class="peer" id="callPeerName"></span>
+      <span class="led mono" id="callTimer">00:00</span>
+    </div>
+    <div id="localWrap" style="display:none;">
+      <video id="localVideo" autoplay playsinline muted></video>
+    </div>
+    <div id="callBar" style="display:none;">
+      <button id="muteBtn" title="Mute mic">🎤</button>
+      <button id="camBtn" title="Toggle camera">📷</button>
+      <button id="hangupBtn" class="hangup" title="Hang up">⏹</button>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div class="sb-section" id="directorySection">
+      <div class="sb-title">Directory</div>
+      <div id="directory"><div id="directoryEmpty">no one else is online yet</div></div>
+    </div>
+    <div class="sb-section" id="chatSection">
+      <div class="sb-title">Line Chat</div>
+      <div id="chatLog"></div>
+      <div id="chatInputWrap">
+        <input id="chatInput" placeholder="join a call to chat" disabled autocomplete="off">
+        <button id="chatSend" disabled>Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- INCOMING CALL MODAL -->
+<div class="modal-overlay" id="incomingOverlay">
+  <div class="modal">
+    <div class="ring-dot"></div>
+    <div class="who" id="incomingFrom"></div>
+    <div class="label">incoming call</div>
+    <div class="actions">
+      <button class="decline" id="declineBtn">Decline</button>
+      <button class="accept" id="acceptBtn">Accept</button>
+    </div>
+  </div>
+</div>
+
+<!-- OUTGOING CALL MODAL -->
+<div class="modal-overlay" id="outgoingOverlay">
+  <div class="modal">
+    <div class="ring-dot" style="background:var(--green); animation:none;"></div>
+    <div class="who" id="outgoingTo"></div>
+    <div class="label">calling…</div>
+    <div class="actions">
+      <button class="cancel" id="cancelCallBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://kughalejiydqtseuyrni.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1Z2hhbGVqaXlkcXRzZXV5cm5pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2MzY1NTAsImV4cCI6MjA5NjIxMjU1MH0.Eti8hM2qhHJnhaDmzVR0I2K7zOEiK8H2KEBJeWJiLE8";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const ICE_SERVERS = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+let myName = null;
+let lobbyChannel = null;
+let personalChannel = null;
+let callChannel = null;
+let pc = null;
+let localStream = null;
+let currentCallId = null;
+let currentPeer = null;
+let callState = "idle"; // idle | calling | ringing | in-call
+let pendingIncoming = null; // { from, callId }
+let callStartTime = null;
+let timerInterval = null;
+let micOn = true;
+let camOn = true;
+
+const el = (id) => document.getElementById(id);
+
+function sanitizeName(raw){
+  return raw.trim().replace(/[^a-zA-Z0-9_\-]/g, "").slice(0, 20);
+}
+
+function callIdFor(a, b){
+  return [a, b].sort().join("__");
+}
+
+// ---------- Landing ----------
+el("connectBtn").addEventListener("click", connect);
+el("nameInput").addEventListener("keydown", (e) => { if(e.key === "Enter") connect(); });
+
+async function connect(){
+  const name = sanitizeName(el("nameInput").value);
+  if(!name){ el("landingErr").textContent = "enter a name (letters, numbers, _ or -)"; return; }
+  el("connectBtn").disabled = true;
+  el("landingErr").textContent = "";
+  myName = name;
+
+  try{
+    await setupPersonalChannel();
+    await setupLobby();
+  }catch(err){
+    console.error(err);
+    el("landingErr").textContent = "error: " + (err && err.message ? err.message : String(err));
+    el("connectBtn").disabled = false;
+    return;
+  }
+
+  el("landing").style.display = "none";
+  el("app").classList.add("active");
+  el("meLabel").textContent = myName;
+}
+
+// ---------- Personal channel (receives incoming call invites) ----------
+async function setupPersonalChannel(){
+  personalChannel = sb.channel(`user:${myName}`);
+  personalChannel.on("broadcast", { event: "incoming-call" }, (msg) => {
+    const { from, callId } = msg.payload;
+    if(callState !== "idle") return; // busy, silently ignore for now
+    pendingIncoming = { from, callId };
+    callState = "ringing";
+    el("incomingFrom").textContent = from;
+    el("incomingOverlay").classList.add("show");
+  });
+  personalChannel.on("broadcast", { event: "call-declined" }, (msg) => {
+    if(callState === "calling" && msg.payload.callId === currentCallId){
+      endCallCleanup("declined");
+    }
+  });
+  await personalChannel.subscribe();
+}
+
+// ---------- Lobby (presence / directory) ----------
+async function setupLobby(){
+  lobbyChannel = sb.channel("lobby", { config: { presence: { key: myName } } });
+  lobbyChannel.on("presence", { event: "sync" }, renderDirectory);
+  await lobbyChannel.subscribe(async (status) => {
+    if(status === "SUBSCRIBED"){
+      await lobbyChannel.track({ username: myName, status: "online" });
+    }
+  });
+}
+
+async function updatePresenceStatus(status){
+  if(lobbyChannel) await lobbyChannel.track({ username: myName, status });
+}
+
+function renderDirectory(){
+  const state = lobbyChannel.presenceState();
+  const dir = el("directory");
+  const entries = Object.entries(state)
+    .filter(([username]) => username !== myName)
+    .map(([username, metas]) => ({ username, status: metas[0]?.status || "online" }));
+
+  if(entries.length === 0){
+    dir.innerHTML = '<div id="directoryEmpty">no one else is online yet</div>';
+    return;
+  }
+
+  dir.innerHTML = "";
+  entries.sort((a,b) => a.username.localeCompare(b.username)).forEach(({username, status}) => {
+    const row = document.createElement("div");
+    row.className = "line-item";
+    const busy = status !== "online";
+    row.innerHTML = `
+      <div class="who">
+        <span class="pulse ${busy ? "busy" : ""}"></span>
+        <span class="name">${username}</span>
+      </div>
+      <button ${callState !== "idle" || busy ? "disabled" : ""}>${busy ? "busy" : "Call"}</button>
+    `;
+    row.querySelector("button").addEventListener("click", () => startOutgoingCall(username));
+    dir.appendChild(row);
+  });
+}
+
+// ---------- Outgoing call ----------
+async function startOutgoingCall(target){
+  if(callState !== "idle") return;
+  callState = "calling";
+  currentPeer = target;
+  currentCallId = callIdFor(myName, target);
+  await updatePresenceStatus("in call");
+
+  callChannel = sb.channel(`call:${currentCallId}`);
+  bindCallChannelHandlers();
+  await callChannel.subscribe();
+
+  const targetChannel = sb.channel(`user:${target}`);
+  await targetChannel.subscribe();
+  await targetChannel.send({ type: "broadcast", event: "incoming-call", payload: { from: myName, callId: currentCallId } });
+  await targetChannel.unsubscribe();
+
+  el("outgoingTo").textContent = target;
+  el("outgoingOverlay").classList.add("show");
+}
+
+el("cancelCallBtn").addEventListener("click", async () => {
+  if(callState !== "calling") return;
+  if(callChannel) await callChannel.send({ type:"broadcast", event:"hangup", payload:{ from: myName } }).catch(()=>{});
+  endCallCleanup("cancelled");
+});
+
+// ---------- Incoming call response ----------
+el("acceptBtn").addEventListener("click", async () => {
+  if(!pendingIncoming) return;
+  const { from, callId } = pendingIncoming;
+  el("incomingOverlay").classList.remove("show");
+  currentPeer = from;
+  currentCallId = callId;
+  callState = "in-call";
+  await updatePresenceStatus("in call");
+
+  try{
+    localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+  }catch(err){
+    console.error(err);
+    alert("Camera/microphone access is needed to answer the call.");
+    endCallCleanup("media-error");
+    return;
+  }
+  showLocalVideo();
+
+  callChannel = sb.channel(`call:${currentCallId}`);
+  bindCallChannelHandlers();
+  await callChannel.subscribe();
+  await callChannel.send({ type:"broadcast", event:"accepted", payload:{ from: myName } });
+
+  pendingIncoming = null;
+  enterCallUI(from);
+});
+
+el("declineBtn").addEventListener("click", async () => {
+  if(!pendingIncoming) return;
+  const { from, callId } = pendingIncoming;
+  const ch = sb.channel(`user:${from}`);
+  await ch.subscribe();
+  await ch.send({ type:"broadcast", event:"call-declined", payload:{ callId } });
+  await ch.unsubscribe();
+  el("incomingOverlay").classList.remove("show");
+  pendingIncoming = null;
+  callState = "idle";
+});
+
+// ---------- Call channel signaling ----------
+function bindCallChannelHandlers(){
+  callChannel.on("broadcast", { event: "accepted" }, async () => {
+    if(callState !== "calling") return;
+    el("outgoingOverlay").classList.remove("show");
+    try{
+      localStream = await navigator.mediaDevices.getUserMedia({ video:true, audio:true });
+    }catch(err){
+      console.error(err);
+      alert("Camera/microphone access is needed to place the call.");
+      endCallCleanup("media-error");
+      return;
+    }
+    showLocalVideo();
+    callState = "in-call";
+    enterCallUI(currentPeer);
+    await createPeerConnection();
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await callChannel.send({ type:"broadcast", event:"offer", payload:{ sdp: offer } });
+  });
+
+  callChannel.on("broadcast", { event: "offer" }, async (msg) => {
+    if(!pc) await createPeerConnection();
+    await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    await callChannel.send({ type:"broadcast", event:"answer", payload:{ sdp: answer } });
+  });
+
+  callChannel.on("broadcast", { event: "answer" }, async (msg) => {
+    if(!pc) return;
+    await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+  });
+
+  callChannel.on("broadcast", { event: "ice-candidate" }, async (msg) => {
+    if(!pc) return;
+    try{ await pc.addIceCandidate(new RTCIceCandidate(msg.payload.candidate)); }catch(e){ console.warn(e); }
+  });
+
+  callChannel.on("broadcast", { event: "hangup" }, () => {
+    addSystemMessage(`${currentPeer} ended the call`);
+    endCallCleanup("remote-hangup");
+  });
+
+  callChannel.on("broadcast", { event: "chat" }, (msg) => {
+    addChatMessage(msg.payload.from, msg.payload.text, false);
+  });
+}
+
+async function createPeerConnection(){
+  pc = new RTCPeerConnection(ICE_SERVERS);
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+  pc.ontrack = (event) => {
+    el("remoteVideo").srcObject = event.streams[0];
+    el("stage").classList.remove("empty");
+  };
+  pc.onicecandidate = (event) => {
+    if(event.candidate && callChannel){
+      callChannel.send({ type:"broadcast", event:"ice-candidate", payload:{ candidate: event.candidate } });
+    }
+  };
+}
+
+function showLocalVideo(){
+  el("localVideo").srcObject = localStream;
+  el("localWrap").style.display = "block";
+}
+
+function enterCallUI(peerName){
+  el("callBar").style.display = "flex";
+  el("callInfo").classList.add("show");
+  el("callPeerName").textContent = peerName;
+  el("chatInput").disabled = false;
+  el("chatSend").disabled = false;
+  el("chatInput").placeholder = "message " + peerName;
+  el("chatLog").innerHTML = "";
+  addSystemMessage(`connected with ${peerName}`);
+  callStartTime = Date.now();
+  timerInterval = setInterval(updateTimer, 1000);
+  updateTimer();
+}
+
+function updateTimer(){
+  const secs = Math.floor((Date.now() - callStartTime) / 1000);
+  const m = String(Math.floor(secs/60)).padStart(2,"0");
+  const s = String(secs%60).padStart(2,"0");
+  el("callTimer").textContent = `${m}:${s}`;
+}
+
+// ---------- Hangup / cleanup ----------
+el("hangupBtn").addEventListener("click", async () => {
+  if(callChannel) await callChannel.send({ type:"broadcast", event:"hangup", payload:{ from: myName } }).catch(()=>{});
+  endCallCleanup("local-hangup");
+});
+
+async function endCallCleanup(reason){
+  clearInterval(timerInterval);
+  timerInterval = null;
+  el("outgoingOverlay").classList.remove("show");
+  el("incomingOverlay").classList.remove("show");
+  el("callBar").style.display = "none";
+  el("callInfo").classList.remove("show");
+  el("localWrap").style.display = "none";
+  el("remoteVideo").srcObject = null;
+  el("stage").classList.add("empty");
+  el("chatInput").disabled = true;
+  el("chatSend").disabled = true;
+  el("chatInput").placeholder = "join a call to chat";
+
+  if(pc){ pc.close(); pc = null; }
+  if(localStream){ localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  if(callChannel){ await callChannel.unsubscribe(); callChannel = null; }
+
+  currentCallId = null;
+  currentPeer = null;
+  pendingIncoming = null;
+  callState = "idle";
+  await updatePresenceStatus("online");
+}
+
+// ---------- Mic / camera toggles ----------
+el("muteBtn").addEventListener("click", () => {
+  if(!localStream) return;
+  micOn = !micOn;
+  localStream.getAudioTracks().forEach(t => t.enabled = micOn);
+  el("muteBtn").classList.toggle("active", !micOn);
+});
+el("camBtn").addEventListener("click", () => {
+  if(!localStream) return;
+  camOn = !camOn;
+  localStream.getVideoTracks().forEach(t => t.enabled = camOn);
+  el("camBtn").classList.toggle("active", !camOn);
+});
+
+// ---------- Chat ----------
+function addChatMessage(from, text, own){
+  const div = document.createElement("div");
+  div.className = "msg" + (own ? " own" : "");
+  div.innerHTML = `<span class="from">${from}</span><span class="body"></span>`;
+  div.querySelector(".body").textContent = text;
+  el("chatLog").appendChild(div);
+  el("chatLog").scrollTop = el("chatLog").scrollHeight;
+}
+function addSystemMessage(text){
+  const div = document.createElement("div");
+  div.className = "msg sys";
+  div.textContent = text;
+  el("chatLog").appendChild(div);
+  el("chatLog").scrollTop = el("chatLog").scrollHeight;
+}
+
+el("chatSend").addEventListener("click", sendChat);
+el("chatInput").addEventListener("keydown", (e) => { if(e.key === "Enter") sendChat(); });
+
+async function sendChat(){
+  const text = el("chatInput").value.trim();
+  if(!text || !callChannel || callState !== "in-call") return;
+  el("chatInput").value = "";
+  addChatMessage(myName, text, true);
+  await callChannel.send({ type:"broadcast", event:"chat", payload:{ from: myName, text } });
+}
+
+window.addEventListener("beforeunload", () => {
+  if(callChannel) callChannel.send({ type:"broadcast", event:"hangup", payload:{ from: myName } }).catch(()=>{});
+  if(lobbyChannel) lobbyChannel.untrack();
+});
+</script>
+</body>
+</html>
